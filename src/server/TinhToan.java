@@ -1,10 +1,16 @@
+package server;
 
 import java.math.BigDecimal;
+import java.net.InetAddress;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import Services.BienLaiGiaoDich;
 import Services.ChiTietGiaoDich;
+import Services.ClientCallback;
 import Services.ITinhToan;
 
 import java.rmi.*;
@@ -16,6 +22,9 @@ import java.time.format.DateTimeFormatter;
 
 public class TinhToan extends UnicastRemoteObject implements ITinhToan {
 
+	private List<ClientCallback> callbacks = new ArrayList<>();
+    private static Map<String, Double> accounts = new HashMap<>();
+	
     public TinhToan() throws RemoteException {
     	super();
         MyConnection.ketnoi();
@@ -95,6 +104,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                         switch (i) {
                             case 0:
                                 int update0 = SetStatus(stk, 1);
+                                //set lại status = 1
                                 return (update0 == 1) ? 0 : -2; // thành công
                             case 1:
                                 return 1; // đang được sử dụng
@@ -192,6 +202,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                 int chay2 = cmd2.executeUpdate();
                                 if (chay2 > 0) {
                                     System.out.println("Đã ghi lại lịch sử rút tiền");
+                                    MyServer.logMessage("Client withdrew: Account: " + stk + ", Amount new: " + sotienrut);
                                     return 1;
                                 } else {
                                     System.out.println("Không ghi được lịch sử giao dịch");
@@ -263,9 +274,9 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                             if (!rs.next()) {
                                 return -4;
                             }
-                            BigDecimal soDuTaiKhoanChuyen = rs.getBigDecimal("SoTien");
-                            BigDecimal soTienChuyenBigDecimal = BigDecimal.valueOf(sotienchuyen);
-                            BigDecimal soDuTaiKhoanChuyenNew = soDuTaiKhoanChuyen.subtract(soTienChuyenBigDecimal);
+                            BigDecimal soDuTaiKhoanChuyen = rs.getBigDecimal("SoTien");//5tr
+                            BigDecimal soTienChuyenBigDecimal = BigDecimal.valueOf(sotienchuyen);//1tr
+                            BigDecimal soDuTaiKhoanChuyenNew = soDuTaiKhoanChuyen.subtract(soTienChuyenBigDecimal);//5tr-1tr=4tr
                             if (soDuTaiKhoanChuyenNew.compareTo(BigDecimal.valueOf(50000)) >= 0) {
                                 // 1. Trừ tiền người chuyển
                                 String sql1 = "UPDATE TaiKhoan set SoTien = ? WHERE SoTaiKhoan = ?";
@@ -273,7 +284,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                 cmd1.setBigDecimal(1, soDuTaiKhoanChuyenNew);
                                 cmd1.setLong(2, stkchuyen);
                                 if (cmd1.executeUpdate() > 0) { // nếu update thành công tài khoản người chuyển
-                                    // Ghi Chú = Chuyen:stk_nhan
+                                    // Ghi Chú = Chuyen tien den:stk_nhan
                                     LocalDateTime currentDateTime = LocalDateTime.now();
                                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
                                     String TimeNow = currentDateTime.format(formatter);
@@ -291,13 +302,16 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                         cmd2.setLong(1, sotienchuyen);
                                         cmd2.setLong(2, stknhan);
                                         if (cmd2.executeUpdate() > 0) { // nếu update thành công tài khoản người nhận
+                                        	//tạo biên lai mới là nhận tiền từ người gửi
                                             String sql4 = "INSERT INTO ChiTietGiaoDich (NgayGiaoDich, SoTienGiaoDich, GhiChu, SoTaiKhoan) VALUES(?, ?, ?, ?)";
                                             PreparedStatement cmd4 = MyConnection.connection.prepareStatement(sql4);
                                             cmd4.setString(1, TimeNow);
                                             cmd4.setLong(2, sotienchuyen);
                                             String ghichu1 = "Nhận tiền từ: " + String.valueOf(stkchuyen);
+                                            //ghi chú: nhận tiền từ: stk_gui
                                             cmd4.setString(3, ghichu1);
                                             cmd4.setLong(4, stknhan);
+                                            MyServer.logMessage("Client transferred: From Account " + stkchuyen + " To Account " + stknhan + ", Amount: " + sotienchuyen);
                                             if (cmd4.executeUpdate() > 0) {
                                                 return 1;
                                             } else {
@@ -342,6 +356,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
             ResultSet rs = cmd.executeQuery();
             if (rs.next()) {
                 BigDecimal SoDu = rs.getBigDecimal("SoTien");
+                MyServer.logMessage("Current user balance is: " + SoDu);
                 return SoDu;
             } else {
                 return BigDecimal.valueOf(-1);
@@ -362,6 +377,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
             cmd.setLong(3, mkcu);
             int kt = cmd.executeUpdate();
             if (kt > 0) {
+            	MyServer.logMessage("User has changed password");
                 return kt;
             } else {
                 return 0;
@@ -385,8 +401,9 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                 Timestamp ngaygiaodich = rs.getTimestamp("NgayGiaoDich");
                 long sotiengiaodich = rs.getLong("SoTienGiaoDich");
                 String ghichu = rs.getString("GhiChu");
-                ds.add(new ChiTietGiaoDich(magiaodich, ngaygiaodich, sotiengiaodich, ghichu, sotiengiaodich));
+                ds.add(new ChiTietGiaoDich(magiaodich, ngaygiaodich, sotiengiaodich, ghichu, stk));
             }
+            MyServer.logMessage("User has seen transaction history");
             rs.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -406,6 +423,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                     LocalDateTime currentDateTime = LocalDateTime.now();
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
                     String TimeNow = currentDateTime.format(formatter);
+                    //thêm loại giao dịch là chuyển tiền vào db Chitietgiaodich
                     String sql1 = "INSERT INTO ChiTietGiaoDich (NgayGiaoDich, SoTienGiaoDich, GhiChu, SoTaiKhoan) VALUES(?, ?, ?, ?)";
                     PreparedStatement cmd1 = MyConnection.connection.prepareStatement(sql1);
                     cmd1.setString(1, TimeNow);
@@ -414,6 +432,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                     cmd1.setString(3, ghichu);
                     cmd1.setLong(4, stk);
                     if (cmd1.executeUpdate() > 0) {
+                    	MyServer.logMessage("The user has deposited money");
                         return 1; // Nạp tiền và ghi lịch sử thành công
                     } else {
                         return -1; // Ghi lịch sử thất bại
@@ -433,7 +452,10 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
     public ArrayList InBienLai(long stk) throws RemoteException {
         ArrayList bienlai = new ArrayList();
         try {
-            String sql = "SELECT tk.SoTaiKhoan, tk.HoTen, tk.SoDienThoai, ct.MaGiaoDich, ct.NgayGiaoDich, ct.SoTienGiaoDich, ct.GhiChu FROM TaiKhoan tk LEFT JOIN ChiTietGiaoDich ct ON tk.SoTaiKhoan = ct.SoTaiKhoan WHERE ct.MaGiaoDich = (select MAX(MaGiaoDich) from ChiTietGiaoDich where SoTaiKhoan = ?) GROUP BY tk.SoTaiKhoan, tk.HoTen, tk.SoDienThoai, ct.MaGiaoDich, ct.NgayGiaoDich, ct.SoTienGiaoDich, ct.GhiChu";
+            String sql = "SELECT tk.SoTaiKhoan, tk.HoTen, tk.SoDienThoai, ct.MaGiaoDich, ct.NgayGiaoDich, ct.SoTienGiaoDich, ct.GhiChu "
+            		+ "FROM TaiKhoan tk LEFT JOIN ChiTietGiaoDich ct ON tk.SoTaiKhoan = ct.SoTaiKhoan WHERE ct.MaGiaoDich = (select MAX(MaGiaoDich) "
+            		+ "from ChiTietGiaoDich where SoTaiKhoan = ?) "
+            		+ "GROUP BY tk.SoTaiKhoan, tk.HoTen, tk.SoDienThoai, ct.MaGiaoDich, ct.NgayGiaoDich, ct.SoTienGiaoDich, ct.GhiChu";
             PreparedStatement cmd = MyConnection.connection.prepareStatement(sql);
             cmd.setLong(1, stk);
             ResultSet rs = cmd.executeQuery();
@@ -453,4 +475,36 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
         }
         return bienlai;
     }
+
+
+	@Override
+	public void clientDisconnected(String clientAddress) throws RemoteException {
+		// TODO Auto-generated method stub
+		System.out.println("Client disconnected: " + clientAddress);
+		MyServer.logMessage("Client disconnected: " + clientAddress);
+	}
+
+	@Override
+	public void callbackRegister(ClientCallback callback) throws Exception {
+		// TODO Auto-generated method stub
+		if (!callbacks.contains(callback)) {
+            callbacks.add(callback);
+            InetAddress clientAddress = InetAddress.getLocalHost();
+            MyServer.logMessage("Client connected: " + clientAddress.getHostAddress());
+        }
+	}
+
+	@Override
+	public void notify(String clientAccount) throws RemoteException {
+		// TODO Auto-generated method stub
+		long account = Long.parseLong(clientAccount);
+		BigDecimal newBalance = XemSoDu(account);
+        for (ClientCallback callback : callbacks) {
+        	callback.notifyBalanceChange(clientAccount, newBalance);
+        }
+	}
+
+
+
+	
 }

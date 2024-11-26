@@ -16,6 +16,7 @@ public interface ITinhToan extends Remote{
     public boolean DangNhap(long stk, long mk) throws RemoteException;
 
     public int GetStatus(long stk) throws RemoteException;
+    
 
     public int KTRutTien(long stk, Date ngaykt, long sotienrut) throws RemoteException;
 
@@ -36,4 +37,15 @@ public interface ITinhToan extends Remote{
     public int NapTien(long stk, long sotiennap) throws RemoteException;
     
     public ArrayList InBienLai(long stk) throws RemoteException;
+    
+
+	//String getClientAccount(String accountNumber) throws RemoteException;
+	
+	void clientDisconnected(String clientAddress) throws RemoteException;
+    
+    void callbackRegister(ClientCallback callback) throws Exception;
+    
+    void notify(String clientAccount) throws RemoteException;
+    
+    
 }
