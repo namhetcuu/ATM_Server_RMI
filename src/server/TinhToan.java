@@ -23,6 +23,7 @@ import java.time.format.DateTimeFormatter;
 public class TinhToan extends UnicastRemoteObject implements ITinhToan {
 
 	private List<ClientCallback> callbacks = new ArrayList<>();
+	//private Map<String, ClientCallback> accountCallbacks = new HashMap<>();
     private static Map<String, Double> accounts = new HashMap<>();
 	
     public TinhToan() throws RemoteException {
@@ -132,6 +133,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
             String sql = "UPDATE TaiKhoan SET Status = 0 WHERE SoTaiKhoan = ?";
             PreparedStatement cmd = MyConnection.connection.prepareStatement(sql);
             cmd.setLong(1, stk);
+            MyServer.logMessage("The client named "+stk+" has logged out");
             return cmd.executeUpdate();
         } catch (Exception e) {
             e.printStackTrace();
@@ -202,6 +204,8 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                 int chay2 = cmd2.executeUpdate();
                                 if (chay2 > 0) {
                                     System.out.println("Đã ghi lại lịch sử rút tiền");
+                                    String acc = String.valueOf(stk);
+                                	notify(acc);
                                     MyServer.logMessage("Client withdrew: Account: " + stk + ", Amount new: " + sotienrut);
                                     return 1;
                                 } else {
@@ -356,7 +360,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
             ResultSet rs = cmd.executeQuery();
             if (rs.next()) {
                 BigDecimal SoDu = rs.getBigDecimal("SoTien");
-                MyServer.logMessage("Current user balance is: " + SoDu);
+                MyServer.logMessage("Current user "+stk+" balance is: " + SoDu);
                 return SoDu;
             } else {
                 return BigDecimal.valueOf(-1);
@@ -377,7 +381,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
             cmd.setLong(3, mkcu);
             int kt = cmd.executeUpdate();
             if (kt > 0) {
-            	MyServer.logMessage("User has changed password");
+            	MyServer.logMessage("User "+stk+" has changed password");
                 return kt;
             } else {
                 return 0;
@@ -403,7 +407,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                 String ghichu = rs.getString("GhiChu");
                 ds.add(new ChiTietGiaoDich(magiaodich, ngaygiaodich, sotiengiaodich, ghichu, stk));
             }
-            MyServer.logMessage("User has seen transaction history");
+            MyServer.logMessage("User "+stk+" has seen transaction history");
             rs.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -432,7 +436,9 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                     cmd1.setString(3, ghichu);
                     cmd1.setLong(4, stk);
                     if (cmd1.executeUpdate() > 0) {
-                    	MyServer.logMessage("The user has deposited money");
+                    	MyServer.logMessage("The user "+stk+" has deposited money");
+                    	String acc = String.valueOf(stk);
+                    	notify(acc);
                         return 1; // Nạp tiền và ghi lịch sử thành công
                     } else {
                         return -1; // Ghi lịch sử thất bại
@@ -485,13 +491,15 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
 	}
 
 	@Override
-	public void callbackRegister(ClientCallback callback) throws Exception {
+	public void callbackRegister(ClientCallback callback,String tendn) throws Exception {
 		// TODO Auto-generated method stub
 		if (!callbacks.contains(callback)) {
+			String clientIP = UnicastRemoteObject.getClientHost();
             callbacks.add(callback);
-            InetAddress clientAddress = InetAddress.getLocalHost();
-            MyServer.logMessage("Client connected: " + clientAddress.getHostAddress());
+            //InetAddress clientAddress = InetAddress.getLocalHost();
+            MyServer.logMessage("Client connected: " + clientIP+" is named: "+tendn);
         }
+		
 	}
 
 	@Override
@@ -500,8 +508,11 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
 		long account = Long.parseLong(clientAccount);
 		BigDecimal newBalance = XemSoDu(account);
         for (ClientCallback callback : callbacks) {
-        	callback.notifyBalanceChange(clientAccount, newBalance);
+        	if(callback.getClientAccount(clientAccount).equals(clientAccount)) {
+        		callback.notifyBalanceChange(clientAccount, newBalance);
+        	}
         }
+		
 	}
 
 

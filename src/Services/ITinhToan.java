@@ -43,7 +43,7 @@ public interface ITinhToan extends Remote{
 	
 	void clientDisconnected(String clientAddress) throws RemoteException;
     
-    void callbackRegister(ClientCallback callback) throws Exception;
+    void callbackRegister(ClientCallback callback,String tendn) throws Exception;
     
     void notify(String clientAccount) throws RemoteException;
     
