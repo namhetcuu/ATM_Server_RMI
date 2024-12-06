@@ -11,5 +11,7 @@
 	<classpathentry kind="lib" path="libraries/jbcrypt-0.4.jar"/>
 	<classpathentry kind="lib" path="libraries/Service_Jar_2.jar"/>
 	<classpathentry kind="lib" path="libraries/mysql-connector-j-9.1.0.jar"/>
+	<classpathentry kind="lib" path="libraries/activation-1.1.1.jar"/>
+	<classpathentry kind="lib" path="libraries/javax.mail.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

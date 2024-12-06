@@ -12,6 +12,7 @@ import Services.BienLaiGiaoDich;
 import Services.ChiTietGiaoDich;
 import Services.ClientCallback;
 import Services.ITinhToan;
+import Services.MailService;
 
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
@@ -21,7 +22,7 @@ import java.time.format.DateTimeFormatter;
 
 
 public class TinhToan extends UnicastRemoteObject implements ITinhToan {
-
+    MailService mailService = new MailService();
 	private List<ClientCallback> callbacks = new ArrayList<>();
 	//private Map<String, ClientCallback> accountCallbacks = new HashMap<>();
     private static Map<String, Double> accounts = new HashMap<>();
@@ -102,10 +103,14 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                     ResultSet rs = cmd.executeQuery();
                     if (rs.next()) {
                         int i = rs.getInt("Status");
+                        // Lấy thông tin Email từ cơ sở dữ liệu
+                        String email = rs.getString("Email");
+                        System.out.println("Email của tài khoản: " + email); // In ra email (hoặc sử dụng nó tùy theo yêu cầu)
                         switch (i) {
                             case 0:
                                 int update0 = SetStatus(stk, 1);
                                 //set lại status = 1
+                                mailService.SendLoginMail(email);
                                 return (update0 == 1) ? 0 : -2; // thành công
                             case 1:
                                 return 1; // đang được sử dụng
@@ -177,10 +182,19 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                     if (sotienrut >= 50000 && sotienrut <= 10000000 && sotienrut % 50000 == 0) {
                         String sql = "SELECT * FROM TaiKhoan WHERE SoTaiKhoan = ? AND SoTien >= (? + 50000)";
                         PreparedStatement cmd = MyConnection.connection.prepareStatement(sql);
+
                         cmd.setLong(1, stk);
                         cmd.setLong(2, sotienrut);
+                        
                         ResultSet rs = cmd.executeQuery();
+                        
+
                         if (rs.next()) { // Số dư lớn hơn số rút
+                            // Lấy thông tin Email từ cơ sở dữ liệu
+                            String email = rs.getString("Email");
+                            System.out.println("Email của tài khoản: " + email); // In ra email (hoặc sử dụng nó tùy theo yêu cầu)
+
+                        	
                             Long sotien = rs.getLong("SoTien");
                             // Tiến hành rút
                             String sql1 = "Update TaiKhoan SET SoTien = ? WHERE SoTaiKhoan = ?";
@@ -207,6 +221,7 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                     String acc = String.valueOf(stk);
                                 	notify(acc);
                                     MyServer.logMessage("Client withdrew: Account: " + stk + ", Amount new: " + sotienrut);
+                                    mailService.SendBalanceNotificationMail(email, stk , soTienConLaiSauKhiRut, sotien);
                                     return 1;
                                 } else {
                                     System.out.println("Không ghi được lịch sử giao dịch");
@@ -278,9 +293,21 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                             if (!rs.next()) {
                                 return -4;
                             }
+                            String emailNguoiChuyen = rs.getString("Email");
                             BigDecimal soDuTaiKhoanChuyen = rs.getBigDecimal("SoTien");//5tr
+                            Long soDuTaiKhoanChuyenLong = soDuTaiKhoanChuyen.longValue();
                             BigDecimal soTienChuyenBigDecimal = BigDecimal.valueOf(sotienchuyen);//1tr
                             BigDecimal soDuTaiKhoanChuyenNew = soDuTaiKhoanChuyen.subtract(soTienChuyenBigDecimal);//5tr-1tr=4tr
+                            
+                            String sqlNhan = "SELECT * FROM TaiKhoan WHERE SoTaiKhoan = ?";
+                            PreparedStatement cmdNhan = MyConnection.connection.prepareStatement(sql);
+                            cmd.setLong(1, stknhan);
+                            ResultSet rsNhan = cmd.executeQuery();
+                            if (!rsNhan.next()) {
+                                return -4;
+                            }
+                            String emailNguoiNhan = rsNhan.getString("Email");
+                            Long soDuTaiKhoanNhan = rsNhan.getBigDecimal("SoTien").longValue();
                             if (soDuTaiKhoanChuyenNew.compareTo(BigDecimal.valueOf(50000)) >= 0) {
                                 // 1. Trừ tiền người chuyển
                                 String sql1 = "UPDATE TaiKhoan set SoTien = ? WHERE SoTaiKhoan = ?";
@@ -316,6 +343,8 @@ public class TinhToan extends UnicastRemoteObject implements ITinhToan {
                                             cmd4.setString(3, ghichu1);
                                             cmd4.setLong(4, stknhan);
                                             MyServer.logMessage("Client transferred: From Account " + stkchuyen + " To Account " + stknhan + ", Amount: " + sotienchuyen);
+                                            mailService.SendBalanceNotificationMail(emailNguoiChuyen, stkchuyen , soDuTaiKhoanChuyenLong - sotienchuyen, soDuTaiKhoanChuyenLong);
+                                            mailService.SendBalanceNotificationMail(emailNguoiNhan, stknhan , soDuTaiKhoanNhan + sotienchuyen, soDuTaiKhoanNhan);
                                             if (cmd4.executeUpdate() > 0) {
                                                 return 1;
                                             } else {
